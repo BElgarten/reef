@@ -1,0 +1,3 @@
+Partition boot
+	Type esp
+	Contents esp.img
