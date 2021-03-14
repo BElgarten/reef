@@ -22,6 +22,8 @@ struct framebuffer {
 enum phys_mem_type {
 	PHYS_MEM_RESERVED,
 	PHYS_MEM_FREE,
+	/* for memory that can't be used until uefi page tables are removed */
+	PHYS_MEM_BOOTSTRAP_USED,
 	PHYS_MEM_USED,
 	PHYS_MEM_ACPI_RECLAIMABLE,
 	PHYS_MEM_NONVOLATILE
@@ -30,22 +32,28 @@ enum phys_mem_type {
 struct bootstrap_memory_map_entry {
 	enum phys_mem_type type;
 	uint64_t base;
-	uint64_t size;
+	uint64_t size; /* bytes */
 };
 
-struct bootstrap_memory_map {
+
+#define BOOTSTRAP_STACK_SIZE 0x2000
+struct bootstrap_memory_info {
 	size_t count;
 	struct bootstrap_memory_map_entry *map;
+	uint64_t transition_pages;
+	uint64_t stack;
 };
 
+/* in the event this structure is edited: */
+/* update `relocate_bootstrap_data()` in memory/virtual.c */
 struct bootstrap_info {
 	struct framebuffer framebuffer;
-	struct bootstrap_memory_map memory;
+	struct bootstrap_memory_info memory;
 };
 
 extern struct bootstrap_info bootstrap_info;
 
-extern void kentry(void);
+extern void call_kentry(uint64_t stack);
 
 extern void printf(const char *fmt, ...);
 

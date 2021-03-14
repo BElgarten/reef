@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include "uefi.h"
 #include "bootstrap.h"
+#include "cpu.h"
 
 EFI_SYSTEM_TABLE *system_table;
 EFI_HANDLE image_handle;
@@ -251,7 +252,7 @@ static void *uefi_alloc(size_t nbytes) {
 	EFI_PHYSICAL_ADDRESS ret;
 	UINTN npages;
 
-	npages = (nbytes + (EFI_PAGESIZE - 1)) / EFI_PAGESIZE;
+	npages = (nbytes + EFI_PAGESIZE - 1) / EFI_PAGESIZE;
 	e = system_table->BootServices->AllocatePages(
 		AllocateAnyPages, EfiLoaderData, npages, &ret);
 	check_error_and_panic(e, L"uefi_alloc(): AllocatePages(): ");
@@ -309,8 +310,8 @@ enum phys_mem_type internal_memory_types[] = {
 	PHYS_MEM_RESERVED,
 	PHYS_MEM_USED,
 	PHYS_MEM_USED,
-	PHYS_MEM_FREE,
-	PHYS_MEM_FREE,
+	PHYS_MEM_BOOTSTRAP_USED,
+	PHYS_MEM_BOOTSTRAP_USED,
 	PHYS_MEM_RESERVED,
 	PHYS_MEM_RESERVED,
 	PHYS_MEM_FREE,
@@ -323,7 +324,7 @@ enum phys_mem_type internal_memory_types[] = {
 	PHYS_MEM_NONVOLATILE
 };
 
-static void finalize_memory_map(struct memory_map *uefimap) {
+static void finalize_memory_map(struct memory_map *uefimap, uint64_t transition_pages) {
 	size_t nentries;
 	size_t allocsize, allocpages;
 	size_t i;
@@ -368,10 +369,37 @@ static void finalize_memory_map(struct memory_map *uefimap) {
 
 	bootstrap_info.memory.map = newmap;
 	bootstrap_info.memory.count = nentries + 1;
+	bootstrap_info.memory.transition_pages = transition_pages;
+}
+
+uint64_t allocate_transition_pages(void) {
+	EFI_STATUS e;
+	uint64_t ret;
+	
+	e = system_table->BootServices->AllocatePages(
+		AllocateAnyPages, EfiLoaderData, 4, &ret);
+	check_error_and_panic(e, L"allocate_transition_pages(): BootServices->AllocatePages(): ");
+	return ret;
+}
+
+uint64_t allocate_bootstrap_stack(void) {
+	EFI_STATUS e;
+	uint64_t ret;
+	UINTN count;
+
+	count = (BOOTSTRAP_STACK_SIZE + EFI_PAGESIZE - 1) / EFI_PAGESIZE;
+
+	
+	e = system_table->BootServices->AllocatePages(
+		AllocateAnyPages, EfiLoaderData, count, &ret);
+	check_error_and_panic(e, L"allocate_transition_pages(): BootServices->AllocatePages");
+	return ret;
 }
 
 void bootstrap_entry(EFI_HANDLE handle, EFI_SYSTEM_TABLE *st) {
 	struct memory_map *memmap;
+	uint64_t transition_pages;
+
 	EFI_STATUS e;
 
 	image_handle = handle;
@@ -383,13 +411,16 @@ void bootstrap_entry(EFI_HANDLE handle, EFI_SYSTEM_TABLE *st) {
 	set_video_mode();
 	uefi_print(L"Detecting Memory...\r\n");
 
+	transition_pages = allocate_transition_pages();
+	bootstrap_info.memory.stack = allocate_bootstrap_stack();
+	
 	load_console_font();
 	memmap = get_memory_map();
 	e = system_table->BootServices->ExitBootServices(handle, memmap->map_key);
 	check_error_and_panic(e, L"ExitBootServices()");
 
-	finalize_memory_map(memmap);
+	finalize_memory_map(memmap, transition_pages);
 
-	kentry();
+	call_kentry(bootstrap_info.memory.stack);
 	for (;;);
 }

@@ -4,7 +4,10 @@ BUILDDIR = build
 SRCDIR = src
 INCLUDEDIR = include
 SKELETONDIR = skel
-EFIOBJS = stall.o terminal.o kentry.o util.o cpu.o descriptors.o idt_stubs.o
+
+SRCSUFFIXES = .c .s .S
+SRCS = $(foreach SUFFIX, $(SRCSUFFIXES), $(wildcard $(SRCDIR)/**/*$(SUFFIX)) $(wildcard $(SRCDIR)/*$(SUFFIX)))
+EFIOBJS = $(filter-out $(basename $(MBRIMG)).o, $(foreach SRC, $(SRCS), $(subst $(SRCDIR), $(BUILDDIR), $(basename $(SRC)).o)))
 EFIBIN = $(BUILDDIR)/bootx64.efi
 DISKIMG = disk.img
 ESPIMG = esp.img
@@ -12,27 +15,28 @@ MBRIMG = $(BUILDDIR)/bootsector.img
 ESPMOUNTPOINT = mnt
 
 PARTITIONFILE = partfile.txt
+LINKERSCRIPT = kernel.ld
 
 VMBIOS = tools/OVMF.fd
 VMLOG = tools/qemu.log
 VM = qemu-system-x86_64
 
 TARGET = x86_64-pe
-AS = $(CC)
-LD = clang 
+AS = clang
+LD = x86_64-pe-ld 
 CC = clang
-OBJCOPY = $(TARGET)-objcopy
 
-CFLAGS = -I$(INCLUDEDIR) -target x86_64-w64-windows-gnu -ffreestanding -fshort-wchar -mno-red-zone -fno-addrsig -Werror -std=c99 -pedantic -pedantic-errors
-ASFLAGS = -target x86_64-w64-windows-gnu -Wall -Wextra -Werror #-masm=intel
-LDFLAGS = -target x86_64-unknown-windows -nostdlib -Wl,-entry:bootstrap_entry -Wl,-subsystem:efi_application -fuse-ld=lld-link
+CFLAGS = -I$(INCLUDEDIR) -target x86_64-w64-windows-gnu -ffreestanding -fshort-wchar -mno-red-zone -Werror -std=c99 -pedantic -pedantic-errors
+ASFLAGS = -target x86_64-w64-windows-gnu -Wall -Wextra -Werror
+LDFLAGS = --oformat pei-x86-64 --subsystem 10 -pie -e bootstrap_entry -T$(LINKERSCRIPT)
 
 .PHONY: build run log clean
 .SUFFIXES: .c .s .S .o .img 
+
 build: $(DISKIMG)
 
 run: $(DISKIMG)
-	$(VM) -bios $(VMBIOS) -drive file=$<,if=ide
+	$(VM) -bios $(VMBIOS) -drive file=$<,if=ide -monitor stdio
 
 log: $(DISKIMG)
 	$(VM) -bios $(VMBIOS) -serial file:$(VMLOG) -drive file=$<,if=ide
@@ -57,14 +61,17 @@ $(ESPIMG): $(EFIBIN) $(wildcard $(SKELETONDIR)/**/*)
 	hdiutil detach `cat .loopback` >& /dev/null
 	rm .loopback
 
-$(EFIBIN): $(foreach OBJ, $(EFIOBJS), $(BUILDDIR)/$(OBJ))
-	$(LD) $(LDFLAGS) $^ -o $@
+$(EFIBIN): $(EFIOBJS) $(LINKERSCRIPT)
+	$(LD) $(LDFLAGS) $(EFIOBJS) -o $@
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 $(BUILDDIR)/%.o: $(SRCDIR)/%.s
+	@mkdir -p $(dir $@)
 	$(AS) $(ASFLAGS) -c -o $@ $<
 $(BUILDDIR)/%.o: $(SRCDIR)/%.S
+	@mkdir -p $(dir $@)
 	$(AS) $(ASFLAGS) -c -o $@ $<
 
 $(BUILDDIR)/%.img: $(SRCDIR)/%.s

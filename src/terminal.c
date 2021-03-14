@@ -146,7 +146,7 @@ static void print_unsigned_base(uintmax_t n, uint8_t base) {
 	}
 
 	divisor = 1;
-	while (n / divisor > base)
+	while (n / divisor >= base)
 		divisor *= base;
 	while (divisor) {
 		putchar(digits[n / divisor]);
@@ -351,4 +351,16 @@ void set_console_foreground(uint32_t color) {
 
 void set_console_background(uint32_t color) {
 	console_status.background = color;
+}
+
+void panic(const char *msg, ...) {
+	va_list args;
+	set_console_foreground(create_color(255, 0, 0));
+	set_console_background(create_color(0, 0, 0));
+
+	va_start(args, msg);
+	vprintf(msg, args);
+	va_end(args);
+	for (;;)
+		;
 }

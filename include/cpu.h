@@ -41,4 +41,16 @@ void load_idt(idte_t *idt, uint16_t limit);
 
 void test_interrupt(void);
 
+uint64_t read_cr3(void);
+void write_cr3(uint64_t v);
+
+void flush_page(uint64_t virt);
+
+void disable_interrupts(void);
+void enable_interrupts(void);
+
+void return_to_high_kernel(void);
+
+void switch_to_high_stack(uint64_t old_stack_bottom);
+
 #endif/*_CPU_H_*/
