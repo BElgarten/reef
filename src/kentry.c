@@ -26,6 +26,7 @@ void print_memory_info(void) {
 		size = bootstrap_info.memory.map[i].size;
 		type = bootstrap_info.memory.map[i].type;
 
+/*
 		printf("Base: %p | Size: %p | Type: %s\n",
 			base, size,
 			type == PHYS_MEM_FREE ? "Free" : 
@@ -35,6 +36,7 @@ void print_memory_info(void) {
 			type == PHYS_MEM_ACPI_RECLAIMABLE ? "ACPI Reclaimable" :
 			type == PHYS_MEM_NONVOLATILE ? "Non-Volatile" :
 			"Unknown");
+*/
 		switch (bootstrap_info.memory.map[i].type) {
 			case PHYS_MEM_FREE:
 				freebytes += bootstrap_info.memory.map[i].size;
@@ -54,8 +56,10 @@ void kentry(void) {
 	disable_interrupts();
 	clear_screen(create_color(0, 0, 0));
 
+
 	print_video_info();
 	print_memory_info();
+
 
 	initalize_memory();
 	return_to_high_kernel();
@@ -65,7 +69,8 @@ void kentry(void) {
 	printf("GDT Initalized\n");
 	unmap_lower_memory();
 
-	panic("initalize_idt crashes currently");
 	initalize_idt();
 	printf("IDT Initalized\n");
+
+	for (;;);
 }

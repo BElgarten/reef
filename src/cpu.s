@@ -17,6 +17,8 @@ flush_gdt:
 	movw %dx, %fs
 	movw %dx, %gs
 	movw %dx, %ss
+	movw $0x18, %dx
+	ltr %dx
 	ret
 flush_cs:
 	lretq
@@ -28,11 +30,6 @@ load_idt:
 	lidt (%rsp)
 	addq $10, %rsp
 	ret
-
-.global test_interrupt
-test_interrupt:
-	jmp .
-	int $10
 
 .global read_cr3
 read_cr3:
@@ -86,3 +83,4 @@ call_kentry:
 	addq $BOOTSTRAP_STACK_SIZE, %rcx
 	movq %rcx, %rsp
 	jmp kentry
+
