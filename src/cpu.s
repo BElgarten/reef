@@ -84,3 +84,30 @@ call_kentry:
 	movq %rcx, %rsp
 	jmp kentry
 
+.global cpuid
+cpuid:
+	pushq %rbx
+	movq %rcx, %rax
+	movq %rdx, %rcx
+	cpuid
+	movl %eax, (%r8)
+	movl %ebx, 4(%r8)
+	movl %ecx, 8(%r8)
+	movl %edx, 12(%r8)
+	popq %rbx
+	ret
+.global write_msr
+write_msr:
+	movl %edx, %eax
+	shrq $32, %rdx
+	wrmsr
+	ret
+
+.global read_msr
+read_msr:
+	rdmsr
+	subq $8, %rsp
+	movl %edx, 4(%rsp)
+	movl %eax, (%rsp)
+	popq %rax
+	ret

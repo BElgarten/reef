@@ -52,14 +52,39 @@ void print_memory_info(void) {
 		freebytes, usablebytes, bytes);
 }
 
+void enable_cpu_features(void) {
+	struct cpuid_result cpuid_res;
+	uint32_t max_ext_cpuid;
+	uint64_t efer, tmp;
+
+	cpuid(0x80000000, 0, &cpuid_res);
+	max_ext_cpuid = cpuid_res.eax;
+
+	if (max_ext_cpuid < 0x80000001)
+		panic("enable_cpu_features(): required features not supported");
+
+	cpuid(0x80000001, 0, &cpuid_res);
+	if (!(cpuid_res.edx & (1 << 11)))
+		panic("enable_cpu_features(): syscall not supported");
+
+	if (!(cpuid_res.edx & (1 << 20)))
+		panic("enable_cpu_features(): no-execute not supported");
+
+	tmp = efer = read_msr(IA32_EFER);
+	tmp |= IA32_EFER_SCE | IA32_EFER_NXE;
+	if (tmp != efer)
+		write_msr(IA32_EFER, tmp);
+}
+
 void kentry(void) {
 	disable_interrupts();
 	clear_screen(create_color(0, 0, 0));
 
+	enable_cpu_features();
+	printf("CPU features enabled\n");
 
 	print_video_info();
 	print_memory_info();
-
 
 	initalize_memory();
 	return_to_high_kernel();

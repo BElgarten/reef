@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#define IA32_EFER 0xC0000080
+#define IA32_EFER_SCE 1
+#define IA32_EFER_NXE (1 << 11)
+
 typedef uint64_t gdte_t;
 typedef uint64_t idte_t[2];
 /* to  avoid padding */
@@ -71,5 +75,16 @@ void enable_interrupts(void);
 void return_to_high_kernel(void);
 
 void switch_to_high_stack(uint64_t old_stack_bottom);
+
+struct cpuid_result {
+	uint32_t eax;
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
+};
+void cpuid(uint32_t eax, uint32_t ecx, struct cpuid_result *res);
+
+void write_msr(uint32_t msr, uint64_t value);
+uint64_t read_msr(uint32_t msr);
 
 #endif/*_CPU_H_*/
