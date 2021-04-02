@@ -1,6 +1,5 @@
-#define IDT_STUB_NAME(n) idt_stub ## n
-
 .extern interrupt_handler
+.extern syscall_handler
 
 .macro store_registers
 	movq %rax, registers.rax(%rip)
@@ -23,6 +22,25 @@
 	movq %rax, registers.cr2(%rip)
 .endm
 
+.macro load_registers
+	movq registers.rax(%rip), %rax 
+	movq registers.rbx(%rip), %rbx 
+	movq registers.rcx(%rip), %rcx 
+	movq registers.rdx(%rip), %rdx 
+	movq registers.rsi(%rip), %rsi 
+	movq registers.rdi(%rip), %rdi 
+	movq registers.rsp(%rip), %rsp 
+	movq registers.rbp(%rip), %rbp 
+	movq registers.r8(%rip), %r8 
+	movq registers.r9(%rip), %r9 
+	movq registers.r10(%rip), %r10 
+	movq registers.r11(%rip), %r11 
+	movq registers.r12(%rip), %r12 
+	movq registers.r13(%rip), %r13 
+	movq registers.r14(%rip), %r14 
+	movq registers.r15(%rip), %r15 
+.endm
+
 .macro idt_stub n
 .global idt_stub_\n
 idt_stub_\n:
@@ -32,6 +50,7 @@ idt_stub_\n:
 	leaq registers(%rip), %rdx
 	xorq %r8, %r8
 	call interrupt_handler
+	load_registers
 	iretq
 .endm
 
@@ -42,12 +61,24 @@ idt_stub_\n:
 
 	movq $\n, %rcx
 	leaq registers(%rip), %rdx
-	movq (%rsp), %r8
+	popq %r8
 	call interrupt_handler
+	load_registers
 	iretq
 .endm
 
 .section .text
+.global syscall_stub
+.extern syscall_handler;
+syscall_stub:
+	store_registers
+	movabsq $0xffffffffe0000000, %rsp
+	movq %rsp, %rbp
+	leaq registers(%rip), %rcx
+	call syscall_handler
+	load_registers
+	sysret
+
 idt_stub 0
 idt_stub 1
 idt_stub 2

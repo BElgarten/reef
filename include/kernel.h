@@ -12,5 +12,6 @@ extern char __kernel_end;
 
 extern void initalize_gdt(void);
 extern void initalize_idt(void);
+extern void initalize_syscall(void);
 
 #endif/*_KERNEL_H_*/

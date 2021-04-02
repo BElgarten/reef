@@ -51,8 +51,10 @@ Descriptor Map
 10	Kernel Data
 18	Tss (double entry)
 20	Tss (double entry)
+28	User Data
+30	User Code
 */
-#define GDT_ENTRY_COUNT 5
+#define GDT_ENTRY_COUNT 7
 gdte_t gdt[GDT_ENTRY_COUNT];
 void initalize_gdt(void) {
 	uint8_t type, flags;
@@ -73,6 +75,14 @@ void initalize_gdt(void) {
 	flags = 0;
 	create_gdt_entry(&gdt[3], (uint64_t) &tss, flags, type);
 	gdt[4] = (uint64_t) &tss >> 32;
+
+	type = GDT_TYPE_PRESENT | GDT_TYPE_DPL(3) | GDT_TYPE_NON_SYSTEM | GDT_TYPE_RW;
+	flags = GDT_FLAG_PAGE_GRANULARITY;
+	create_gdt_entry(&gdt[5], 0, flags, type);
+
+	type = GDT_TYPE_PRESENT | GDT_TYPE_DPL(3) | GDT_TYPE_NON_SYSTEM | GDT_TYPE_CODE | GDT_TYPE_XR;
+	flags = GDT_FLAG_PAGE_GRANULARITY | GDT_FLAG_LONG_CODE;
+	create_gdt_entry(&gdt[6], 0, flags, type);
 
 	limit = sizeof(gdte_t) * GDT_ENTRY_COUNT - 1;
 	flush_gdt(&gdt[0], limit);

@@ -3,9 +3,13 @@
 
 #include <stdint.h>
 
-#define IA32_EFER 0xC0000080
+#define IA32_EFER 0xc0000080
 #define IA32_EFER_SCE 1
 #define IA32_EFER_NXE (1 << 11)
+
+#define IA32_STAR 0xc0000081
+#define IA32_LSTAR 0xc0000082
+#define IA32_FMASK 0xc0000084
 
 typedef uint64_t gdte_t;
 typedef uint64_t idte_t[2];

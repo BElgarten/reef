@@ -64,7 +64,7 @@ void enable_cpu_features(void) {
 		panic("enable_cpu_features(): required features not supported");
 
 	cpuid(0x80000001, 0, &cpuid_res);
-	if (!(cpuid_res.edx & (1 << 11)))
+	if (!(cpuid_res.edx & (1 << 11)) || !(cpuid_res.edx & (1 << 29)))
 		panic("enable_cpu_features(): syscall not supported");
 
 	if (!(cpuid_res.edx & (1 << 20)))
@@ -97,5 +97,7 @@ void kentry(void) {
 	initalize_idt();
 	printf("IDT Initalized\n");
 
+	initalize_syscall();
+	printf("Syscall initalized\n");
 	for (;;);
 }
