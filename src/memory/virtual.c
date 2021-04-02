@@ -103,6 +103,16 @@ void relocate_bootstrap_data(void) {
 	bootstrap_info.memory.map = dst;
 	free_consecutive_physical_pages((uint64_t) src, (sz + PAGESIZE - 1) / PAGESIZE);
 
+	sz = bootstrap_info.init.size;
+	src = bootstrap_info.init.data;
+	dst = malloc(sz);
+	if (!dst)
+		panic("relocate_bootstrap_data(): could not allocate space for init image");
+	memcpy(dst, src, sz);
+
+	bootstrap_info.init.data = dst;
+	free_consecutive_physical_pages((uint64_t) src, (sz + PAGESIZE - 1) / PAGESIZE);
+
 	/* framebuffer */
 	relocate_framebuffer();
 }

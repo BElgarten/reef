@@ -76,9 +76,11 @@ static void check_error_and_panic(EFI_STATUS code,  CHAR16 *msg) {
 	uefi_log(msg);
 	uefi_log(L": ");
 	uefi_log((CHAR16 *)errstr);
+	uefi_log(L"\r\n");
 	uefi_print(msg);
 	uefi_print(L": ");
 	uefi_print((CHAR16 *)errstr);
+	uefi_log(L"\r\n");
 	uefi_hang();
 }
 
@@ -271,7 +273,7 @@ static void load_console_font(void) {
 	EFI_FILE_PROTOCOL *file;
 
 	file = get_uefi_file(L"\\boot\\consolefont.psf", EFI_FILE_MODE_READ, 0);
-	uefi_print(L"File Opened Successfully\r\n");
+	uefi_print(L"Console Font File Opened Successfully\r\n");
 
 	nread = 4;
 	e = file->Read(file, &nread, &magic_buffer);
@@ -295,6 +297,9 @@ static void load_console_font(void) {
 	nread = allocation_size;
 	e = file->Read(file, &nread, bitmap);
 	check_error_and_panic(e, L"load_console_font(): consolefont->Read(Bitmaps)");
+
+	e = file->Close(file);
+	check_error_and_panic(e, L"consolefont->Close()");
 
 	if (nread != allocation_size) {
 		uefi_print(L"Console font file too short");
@@ -396,6 +401,43 @@ uint64_t allocate_bootstrap_stack(void) {
 	return ret;
 }
 
+void load_init_executable(void) {
+	EFI_STATUS e;
+	EFI_FILE_PROTOCOL *file;
+	/* this is used because EFI_FILE_INFO has an vla */
+	union {
+		EFI_FILE_INFO info;
+		char size[sizeof(EFI_FILE_INFO) + 100];
+	} info_union = { 0 };
+	EFI_GUID info_guid = EFI_FILE_INFO_ID;
+	UINTN info_size = sizeof(EFI_FILE_INFO) + 100;
+	UINTN nbytes;
+	void *buffer;
+
+	file = get_uefi_file(L"\\boot\\init", EFI_FILE_MODE_READ, 0);
+	uefi_print(L"Init executable file opened\r\n");
+
+	e = file->GetInfo(file, &info_guid, &info_size, &info_union.info);
+	check_error_and_panic(e, L"initfile->GetInfo()");
+
+	buffer = uefi_alloc(info_union.info.FileSize);
+	nbytes = info_union.info.FileSize;
+	e = file->Read(file, &nbytes, buffer);
+	check_error_and_panic(e, L"initfile->Read()");
+
+	e = file->Close(file);
+	check_error_and_panic(e, L"initfile->Close()");
+
+	if (nbytes != info_union.info.FileSize) {
+		uefi_print(L"load_init_executable(): could not load full file");
+		uefi_log(L"load_init_executable(): could not load full file");
+		uefi_hang();
+	}
+
+	bootstrap_info.init.size = info_union.info.FileSize;
+	bootstrap_info.init.data = buffer;
+}
+
 void bootstrap_entry(EFI_HANDLE handle, EFI_SYSTEM_TABLE *st) {
 	struct memory_map *memmap;
 	uint64_t transition_pages;
@@ -410,6 +452,8 @@ void bootstrap_entry(EFI_HANDLE handle, EFI_SYSTEM_TABLE *st) {
 
 	set_video_mode();
 	uefi_print(L"Detecting Memory...\r\n");
+
+	load_init_executable();
 
 	transition_pages = allocate_transition_pages();
 	bootstrap_info.memory.stack = allocate_bootstrap_stack();

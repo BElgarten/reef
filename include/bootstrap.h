@@ -44,11 +44,17 @@ struct bootstrap_memory_info {
 	uint64_t stack;
 };
 
+struct init_file {
+	size_t size;
+	void *data;
+};
+
 /* in the event this structure is edited: */
 /* update `relocate_bootstrap_data()` in memory/virtual.c */
 struct bootstrap_info {
 	struct framebuffer framebuffer;
 	struct bootstrap_memory_info memory;
+	struct init_file init;
 };
 
 extern struct bootstrap_info bootstrap_info;

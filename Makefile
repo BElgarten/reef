@@ -4,6 +4,7 @@ BUILDDIR = build
 SRCDIR = src
 INCLUDEDIR = include
 SKELETONDIR = skel
+INITDIR = init
 
 SRCSUFFIXES = .c .s .S
 SRCS = $(foreach SUFFIX, $(SRCSUFFIXES), $(wildcard $(SRCDIR)/**/*$(SUFFIX)) $(wildcard $(SRCDIR)/*$(SUFFIX)))
@@ -16,6 +17,7 @@ ESPMOUNTPOINT = mnt
 
 PARTITIONFILE = partfile.txt
 LINKERSCRIPT = kernel.ld
+INITBIN = $(INITDIR)/init
 
 VMBIOS = tools/OVMF.fd
 VMLOG = tools/qemu.log
@@ -30,7 +32,7 @@ CFLAGS = -I$(INCLUDEDIR) -target x86_64-w64-windows-gnu -ffreestanding -fshort-w
 ASFLAGS = -target x86_64-w64-windows-gnu -Wall -Wextra -Werror
 LDFLAGS = --oformat pei-x86-64 --subsystem 10 -pie -e bootstrap_entry -T$(LINKERSCRIPT)
 
-.PHONY: build run log clean
+.PHONY: build run log clean $(INITBIN)
 .SUFFIXES: .c .s .S .o .img 
 
 build: $(DISKIMG)
@@ -41,20 +43,22 @@ run: $(DISKIMG)
 log: $(DISKIMG)
 	$(VM) -bios $(VMBIOS) -serial file:$(VMLOG) -drive file=$<,if=ide
 clean:
-	rm -f $(foreach OBJ, $(EFIOBJS), $(BUILDDIR)/$(OBJ))
+	rm -f $(EFIOBJS)
 	rm -f $(DISKIMG)
 	rm -f $(ESPIMG)
 	rm -f $(MBRIMG)
+	cd $(INITDIR) && $(MAKE) clean
 
 $(DISKIMG): $(ESPIMG) $(MBRIMG) $(PARTITIONFILE)
 	tools/gpt_creator -o $@ -m $(MBRIMG) -s 5000 -b 512 -p $(PARTITIONFILE)
 
-$(ESPIMG): $(EFIBIN) $(wildcard $(SKELETONDIR)/**/*)
+$(ESPIMG): $(EFIBIN) $(wildcard $(SKELETONDIR)/**/*) $(INITBIN)
 	dd if=/dev/zero of=$@ count=4096 bs=512 >& /dev/null
 	hdiutil attach -nomount $@ | awk '{print $$1}' > .loopback
 	newfs_msdos `cat .loopback` >& /dev/null
 	mount -t msdos `cat .loopback` $(ESPMOUNTPOINT)
 	cp -R $(SKELETONDIR)/* $(ESPMOUNTPOINT)
+	cp $(INITBIN) $(ESPMOUNTPOINT)/boot/init
 	mkdir -p $(ESPMOUNTPOINT)/efi/boot
 	cp $(EFIBIN) $(ESPMOUNTPOINT)/efi/boot
 	umount $(ESPMOUNTPOINT)
@@ -76,3 +80,6 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.S
 
 $(BUILDDIR)/%.img: $(SRCDIR)/%.s
 	nasm -f bin $< -o $@
+
+$(INITBIN):
+	cd $(INITDIR) && $(MAKE)

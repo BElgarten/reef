@@ -15,3 +15,12 @@ void *memcpy(void *dst, void *src, size_t n) {
 		*cdst++ = *csrc++;
 	return dst;
 }
+
+int memcmp(void *a, void *b, size_t n) {
+	unsigned char *ca = a;
+	unsigned char *cb = b;
+	for (; n; n--, ca++, cb++)
+		if (*ca != *cb)
+			return *cb - *ca;
+	return 0;
+}

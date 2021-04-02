@@ -47,7 +47,7 @@ void initalize_bootstrap_mapping(void);
 void relocate_kernel(void);
 void relocate_bootstrap_data(void);
 void unmap_lower_memory(void);
-void map_page(uint64_t vaddr, uint64_t paddr);
+void map_page(uint64_t vaddr, uint64_t paddr, uint64_t flags);
 
 #define KERNEL_HEAP_BOTTOM UINT64_C(0xffffffffe0000000)
 #define KERNEL_HEAP_TOP UINT64_C(0xffffffffffe00000)
