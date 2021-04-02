@@ -24,7 +24,7 @@ static pte_t *_calculate_table_address(uint64_t vaddr) {
 }
 
 /* assumes vaddr is under kernel page directory */
-void map_page(uint64_t vaddr, uint64_t paddr) {
+void map_page(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
 	uint16_t pdi, pti;
 	uint64_t tables_base = 0xffffffffffe00000;
 	uint64_t table_page;
@@ -40,12 +40,12 @@ void map_page(uint64_t vaddr, uint64_t paddr) {
 		if (allocate_physical_pages(&table_page, 1, 0))
 			panic("map_page(): unable to allocate memory for page table");
 
-		map_page((uint64_t) table, table_page);
+		map_page((uint64_t) table, table_page, PAGE_PRESENT | PAGE_WRITABLE);
 		memset(table, 0, PAGESIZE);
 	}
 
 	paddr &= PAGEMASK;
-	table[pti] = paddr | PAGE_PRESENT | PAGE_WRITABLE;
+	table[pti] = paddr | flags;
 	flush_page(vaddr);
 }
 
@@ -68,11 +68,11 @@ static void relocate_framebuffer(void) {
 	
 	vaddr = allocate_virtual_pages(sz);
 	if (!vaddr)
-		panic("relocate_bootstrap_data(): could not allocate space for framebuffer\n");
+		panic("relocate_bootstrap_data(): could not allocate space for framebuffer");
 
 	framebuffer = (uint64_t) bootstrap_info.framebuffer.buffer;
 	for (offset = 0; sz > 0; offset += PAGESIZE, sz--)
-		map_page(vaddr + offset, framebuffer + offset);
+		map_page(vaddr + offset, framebuffer + offset, PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
 
 	bootstrap_info.framebuffer.buffer = (uint32_t *) vaddr;
 }
@@ -86,7 +86,7 @@ void relocate_bootstrap_data(void) {
 	src = bootstrap_info.framebuffer.font.bitmaps;
 	dst = malloc(sz);
 	if (!dst)
-		panic("relocate_bootstrap_data(): could not allocate space for font\n");
+		panic("relocate_bootstrap_data(): could not allocate space for font");
 	memcpy(dst, src, sz);
 
 	bootstrap_info.framebuffer.font.bitmaps = dst;
@@ -97,7 +97,7 @@ void relocate_bootstrap_data(void) {
 	src = bootstrap_info.memory.map;
 	dst = malloc(sz);
 	if (!dst)
-		panic("relocate_bootstrap_data(): could not allocate space for memory map\n");
+		panic("relocate_bootstrap_data(): could not allocate space for memory map");
 	memcpy(dst, src, sz);
 
 	bootstrap_info.memory.map = dst;
@@ -204,13 +204,19 @@ void relocate_kernel(void) {
 	uint64_t paddr, vaddr;
 	uint64_t start = (uint64_t) &__kernel_start;
 	uint64_t end = (uint64_t) & __kernel_end;
+	uint64_t flags;
 	uint64_t *stackpages;
 	size_t count;
 	uint8_t *oldstack, *newstack;
 
 	vaddr = KERNEL_HIGHER_HALF_BASE;
-	for (paddr = start; paddr <= end; paddr += PAGESIZE, vaddr += PAGESIZE)
-		map_page(vaddr, paddr);
+	for (paddr = start; paddr <= end; paddr += PAGESIZE, vaddr += PAGESIZE) {
+		if ((uint64_t) &__kernel_text_start <= paddr && paddr < (uint64_t) &__kernel_text_end)
+			flags = PAGE_PRESENT;
+		else
+			flags = PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE;
+		map_page(vaddr, paddr, flags);
+	}
 
 	/* relocate stack */
 	count = (KERNEL_STACK_SIZE + PAGESIZE - 1) / PAGESIZE;
@@ -224,7 +230,7 @@ void relocate_kernel(void) {
 
 	for (vaddr = KERNEL_STACK_TOP; count > 0; count--, vaddr -= PAGESIZE)
 		/* vaddr - 1 because vaddr points to the top of the page we want to map */
-		map_page(vaddr - 1, stackpages[count - 1]);
+		map_page(vaddr - 1, stackpages[count - 1], PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
 
 	free(stackpages);
 
@@ -250,13 +256,13 @@ void unmap_lower_memory(void) {
 	pdpt = (pdpte_t *) vaddr;
 
 	pml4_frame = read_cr3() & PAGEMASK;
-	map_page(vaddr, pml4_frame);
+	map_page(vaddr, pml4_frame, PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
 	flush_page(vaddr);
 
 	pdpt_frame = pml4[511] & PAGEMASK;
 	memset(pml4, 0, 511 * sizeof(pml4e_t));
 
-	map_page(vaddr, pdpt_frame);
+	map_page(vaddr, pdpt_frame, PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
 	flush_page(vaddr);
 
 	memset(pdpt, 0, 511 * sizeof(pdpte_t));

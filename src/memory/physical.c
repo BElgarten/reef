@@ -240,7 +240,7 @@ void prime_allocators(void) {
 	if (!malloc_seed)
 		panic("Not enough memory to seed malloc");
 
-	map_page(KERNEL_HEAP_BOTTOM, malloc_seed);
+	map_page(KERNEL_HEAP_BOTTOM, malloc_seed, PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
 	initalize_malloc();
 	initalize_virtual_memory();
 	initalize_physical_memory();

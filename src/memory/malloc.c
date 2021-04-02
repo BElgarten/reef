@@ -139,7 +139,7 @@ int claim_new_memory(size_t sz) {
 	}
 
 	for (offset = 0; offset < count * PAGESIZE; offset += PAGESIZE) {
-		map_page(vaddr + offset, frame + offset);
+		map_page(vaddr + offset, frame + offset, PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
 		flush_page(vaddr + offset);
 	}
 	
