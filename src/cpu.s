@@ -45,13 +45,11 @@ flush_page:
 	ret
 
 .extern __kernel_start
-.equ KERNEL_HIGHER_HALF_BASE, 0xffffffffc0000000
+.equ PHYSICAL_PAGE_MAP_BASE, 0xffff800000000000
 .global return_to_high_kernel
 return_to_high_kernel:
 	popq %rax
-	movabsq $__kernel_start, %rcx
-	subq %rcx, %rax
-	movabsq $KERNEL_HIGHER_HALF_BASE, %rcx
+	movabsq $PHYSICAL_PAGE_MAP_BASE, %rcx
 	addq %rcx, %rax
 	jmp *%rax
 
@@ -66,16 +64,11 @@ enable_interrupts:
 	ret
 
 .equ BOOTSTRAP_STACK_SIZE, 0x2000
-.equ KERNEL_STACK_TOP, 0xffffffffe0000000
 .global switch_to_high_stack
 switch_to_high_stack:
-	popq %rax
-	addq $BOOTSTRAP_STACK_SIZE, %rcx
-	subq %rsp, %rcx
-	movabsq $KERNEL_STACK_TOP, %rdx
-	subq %rcx, %rdx
-	movq %rdx, %rsp
-	jmp *%rax
+	movq $PHYSICAL_PAGE_MAP_BASE, %rax
+	addq %rax, %rsp	
+	ret
 
 .global call_kentry
 .extern kentry

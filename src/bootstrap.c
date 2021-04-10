@@ -382,7 +382,7 @@ uint64_t allocate_transition_pages(void) {
 	uint64_t ret;
 	
 	e = system_table->BootServices->AllocatePages(
-		AllocateAnyPages, EfiLoaderData, 4, &ret);
+		AllocateAnyPages, EfiLoaderData, BOOTSTRAP_TRANSITION_PAGE_COUNT, &ret);
 	check_error_and_panic(e, L"allocate_transition_pages(): BootServices->AllocatePages(): ");
 	return ret;
 }

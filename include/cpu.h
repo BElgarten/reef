@@ -78,7 +78,7 @@ void enable_interrupts(void);
 
 void return_to_high_kernel(void);
 
-void switch_to_high_stack(uint64_t old_stack_bottom);
+void switch_to_high_stack(void);
 
 struct cpuid_result {
 	uint32_t eax;

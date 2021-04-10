@@ -6,6 +6,37 @@
 #include "util.h"
 #include "bootstrap.h"
 
+static pml4e_t *pml4;
+static int _physical_map_initalized;
+
+void bootstrap_higher_half_heap_table(void) {
+	pml4e_t *uefi_pml4;
+	pdpte_t *heap_pdpt;
+	pde_t *heap_pd;
+	pte_t *heap_pt;
+	pte_t heap_seed_page;
+	uint64_t flags;
+
+	memset((void *) bootstrap_info.memory.transition_pages, 0,
+		PAGESIZE * BOOTSTRAP_TRANSITION_PAGE_COUNT);
+
+	pml4 = (pml4e_t *) bootstrap_info.memory.transition_pages;
+	heap_pdpt = (pdpte_t *) (bootstrap_info.memory.transition_pages + PAGESIZE);
+	heap_pd = (pde_t *) (bootstrap_info.memory.transition_pages + PAGESIZE * 2);
+	heap_pt = (pte_t *) (bootstrap_info.memory.transition_pages + PAGESIZE * 3);
+	heap_seed_page = (pte_t) (bootstrap_info.memory.transition_pages + PAGESIZE * 4);
+
+	uefi_pml4 = (pml4e_t *) (read_cr3() & PAGEMASK);
+	memcpy(pml4, uefi_pml4, 0x80 * sizeof(pml4e_t));
+
+	flags = PAGE_PRESENT | PAGE_WRITABLE;
+	pml4[(KERNEL_HEAP_BOTTOM >> 39) & 0x1ff] = (pml4e_t) heap_pdpt | flags;
+	heap_pdpt[(KERNEL_HEAP_BOTTOM >> 30) & 0x1ff] = (pdpte_t) heap_pd | flags;
+	heap_pd[(KERNEL_HEAP_BOTTOM >> 21) & 0x1ff] = (pde_t) heap_pt | flags;
+	heap_pt[(KERNEL_HEAP_BOTTOM >> 12) & 0x1ff] = (pte_t) heap_seed_page | flags;
+	write_cr3((uint64_t) pml4);
+}
+
 struct virtual_map_entry {
 	uint64_t base;
 	size_t count;
@@ -15,37 +46,43 @@ struct virtual_map_entry {
 
 struct virtual_map_entry *virtual_map;
 
-static pte_t *_calculate_table_address(uint64_t vaddr) {
-	uint64_t tables_base = 0xffffffffffe00000;
-	uint16_t pdi;
-
-	pdi = (vaddr >> 21) & 0x1ff;
-	return (pte_t *) (tables_base | (uint32_t) pdi << 12);
-}
-
-/* assumes vaddr is under kernel page directory */
-void map_page(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
-	uint16_t pdi, pti;
-	uint64_t tables_base = 0xffffffffffe00000;
-	uint64_t table_page;
-	pde_t *directory = (pde_t *) 0xfffffffffffff000;
-	pte_t *table;
-
-	pdi = (vaddr >> 21) & 0x1ff;
-	pti = (vaddr >> 12) & 0x1ff;
-
-	table = (pte_t *) (tables_base | (uint32_t) pdi << 12);
-
-	if ((directory[pdi] & PAGE_PRESENT) == 0) {
-		if (allocate_physical_pages(&table_page, 1, 0))
-			panic("map_page(): unable to allocate memory for page table");
-
-		map_page((uint64_t) table, table_page, PAGE_PRESENT | PAGE_WRITABLE);
-		memset(table, 0, PAGESIZE);
+/* Walks the paging structures and finds the entry of table at index. If */
+/* there is no entry, it will allocate the frame and zero it. This returns */
+/* a pointer, but it is into physical memory, hence the name. */
+static uint64_t *_walk_paging_autoalloc_physical(uint64_t *table, uint16_t index) {
+	uint64_t frame;
+	if (!(table[index] & PAGE_PRESENT)) {
+		if (allocate_physical_pages(&frame, 1, 0))
+			panic("unable to allocate memory paging structure");
+		table[index] = frame | PAGE_PRESENT | PAGE_WRITABLE;
+		if (_physical_map_initalized)
+			memset(P2VADDR(frame), 0, PAGESIZE);
+		else
+			memset((void *) frame, 0, PAGESIZE);
 	}
 
+	return (uint64_t *) (table[index] & PAGEMASK);
+}
+
+
+void map_page_autoalloc(uint64_t vaddr, uint64_t paddr, uint64_t flags) {
+	uint16_t pml4i, pdpti, pdi, pti;
+	pdpte_t *pdpt;
+	pde_t *pd;
+	pte_t *pt;
+
 	paddr &= PAGEMASK;
-	table[pti] = paddr | flags;
+
+	pml4i = vaddr >> 39 & 0x1ff;
+	pdpti = vaddr >> 30 & 0x1ff;
+	pdi = vaddr >> 21 & 0x1ff;
+	pti = vaddr >> 12 & 0x1ff;
+
+	pdpt = P2VADDR(_walk_paging_autoalloc_physical(pml4, pml4i));
+	pd = P2VADDR(_walk_paging_autoalloc_physical(pdpt, pdpti));
+	pt = P2VADDR(_walk_paging_autoalloc_physical(pd, pdi));
+
+	pt[pti] = paddr | flags;
 	flush_page(vaddr);
 }
 
@@ -72,7 +109,7 @@ static void relocate_framebuffer(void) {
 
 	framebuffer = (uint64_t) bootstrap_info.framebuffer.buffer;
 	for (offset = 0; sz > 0; offset += PAGESIZE, sz--)
-		map_page(vaddr + offset, framebuffer + offset, PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
+		map_page_autoalloc(vaddr + offset, framebuffer + offset, PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
 
 	bootstrap_info.framebuffer.buffer = (uint32_t *) vaddr;
 }
@@ -91,6 +128,7 @@ void relocate_bootstrap_data(void) {
 
 	bootstrap_info.framebuffer.font.bitmaps = dst;
 	free_consecutive_physical_pages((uint64_t) src, (sz + PAGESIZE - 1) / PAGESIZE);
+	printf("console font relocated\n");
 
 	/* uefi memory map */
 	sz = bootstrap_info.memory.count * sizeof(struct bootstrap_memory_map_entry);
@@ -112,9 +150,11 @@ void relocate_bootstrap_data(void) {
 
 	bootstrap_info.init.data = dst;
 	free_consecutive_physical_pages((uint64_t) src, (sz + PAGESIZE - 1) / PAGESIZE);
+	printf("uefi memory map relocated\n");
 
 	/* framebuffer */
 	relocate_framebuffer();
+	printf("framebuffer relocated\n");
 }
 
 uint64_t allocate_virtual_pages(size_t count) {
@@ -210,71 +250,63 @@ void free_virtual_pages(uint64_t base, size_t count) {
 	}
 }
 
-void relocate_kernel(void) {
-	uint64_t paddr, vaddr;
-	uint64_t start = (uint64_t) &__kernel_start;
-	uint64_t end = (uint64_t) & __kernel_end;
-	uint64_t flags;
-	uint64_t *stackpages;
-	size_t count;
-	uint8_t *oldstack, *newstack;
 
-	vaddr = KERNEL_HIGHER_HALF_BASE;
-	for (paddr = start; paddr <= end; paddr += PAGESIZE, vaddr += PAGESIZE) {
-		if ((uint64_t) &__kernel_text_start <= paddr && paddr < (uint64_t) &__kernel_text_end)
-			flags = PAGE_PRESENT;
-		else
-			flags = PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE;
-		map_page(vaddr, paddr, flags);
+/* This allocates memory for the page tables, and caches the table address */
+/* from the last call, to speed up calling on consecutive pages. This */
+/* function does NOT invalidate the TLB entry, this should be done by the */
+/* caller, this function is specialize for map_high_physical_memory(). */
+static void _map_page_autoalloc_cache(uint64_t paddr) {
+	uint64_t vaddr;
+	uint64_t page_index;
+	pdpte_t *pdpt;
+	pde_t *pd;
+	pte_t *table;
+	static uint64_t prev_page_index;
+	static pte_t *prev_table;
+	uint16_t pml4i, pdpti, pdi, pti;
+
+
+	paddr &= PAGEMASK;
+	vaddr = (uint64_t) P2VADDR(paddr);
+
+	page_index = vaddr & UINT64_C(0xffffffffffe00000);
+	if (!prev_page_index || prev_page_index != page_index) {
+		pml4i = vaddr >> 39 & 0x1ff;	
+		pdpti = vaddr >> 30 & 0x1ff;
+		pdi = vaddr >> 21 & 0x1ff;
+
+		pdpt = _walk_paging_autoalloc_physical(pml4, pml4i);
+		pd = _walk_paging_autoalloc_physical(pdpt, pdpti);
+		table = _walk_paging_autoalloc_physical(pd, pdi);
+		
+		prev_page_index = page_index;
+		prev_table = table;
 	}
 
-	/* relocate stack */
-	count = (KERNEL_STACK_SIZE + PAGESIZE - 1) / PAGESIZE;
+	
+	pti = vaddr >> 12 & 0x1ff;
+	table[pti] = paddr | PAGE_PRESENT | PAGE_WRITABLE;
+}
 
-	stackpages = malloc(count * sizeof(uint64_t));
-	if (!stackpages)
-		panic("relocate_kernel(): could not allocate memory to hold stack pages");
+void map_high_physical_memory(void) {
+	size_t i;
+	uint64_t base;
+	uint64_t end;
 
-	if (allocate_physical_pages(stackpages, count, 0))
-		panic("relocate_kernel(): could not allocate physical memory for stack");
+	for (i = 0; i < bootstrap_info.memory.count; i++) {
+		base = bootstrap_info.memory.map[i].base;
+		end = base + bootstrap_info.memory.map[i].size;
 
-	for (vaddr = KERNEL_STACK_TOP; count > 0; count--, vaddr -= PAGESIZE)
-		/* vaddr - 1 because vaddr points to the top of the page we want to map */
-		map_page(vaddr - 1, stackpages[count - 1], PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
-
-	free(stackpages);
+		for (; base < end; base += PAGESIZE)
+			_map_page_autoalloc_cache(base);
+	}
 
 	write_cr3(read_cr3());
-
-	memcpy((void *) (KERNEL_STACK_TOP - BOOTSTRAP_STACK_SIZE),
-		(void *) bootstrap_info.memory.stack, BOOTSTRAP_STACK_SIZE);
-
-	/* I think it may be important that this call is the last thing in this funciton */
-	switch_to_high_stack(bootstrap_info.memory.stack);
+	switch_to_high_stack();
+	_physical_map_initalized = 1;
 }
 
 void unmap_lower_memory(void) {
-	uint64_t vaddr, pml4_frame, pdpt_frame;
-	pml4e_t *pml4;
-	pdpte_t *pdpt;
-
-	vaddr = allocate_virtual_pages(1);
-	if (!vaddr)
-		panic("unmap_lower_memory(): could not allocate virtual memory temporary mapping");
-
-	pml4 = (pml4e_t *) vaddr;
-	pdpt = (pdpte_t *) vaddr;
-
-	pml4_frame = read_cr3() & PAGEMASK;
-	map_page(vaddr, pml4_frame, PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
-	flush_page(vaddr);
-
-	pdpt_frame = pml4[511] & PAGEMASK;
-	memset(pml4, 0, 511 * sizeof(pml4e_t));
-
-	map_page(vaddr, pdpt_frame, PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_EXECUTE);
-	flush_page(vaddr);
-
-	memset(pdpt, 0, 511 * sizeof(pdpte_t));
-	free_virtual_pages(vaddr, 1);
+	memset(pml4, 0, 256 * 8);
+	write_cr3(read_cr3());
 }

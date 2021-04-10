@@ -11,6 +11,8 @@ typedef uint64_t pte_t;
 
 #define PAGESIZE 4096
 #define PAGEMASK UINT64_C(0xfffffffffffff000)
+#define PHYSICAL_PAGE_MAP_BASE UINT64_C(0xffff800000000000)
+#define P2VADDR(p) ((void *) ((uint64_t) (p) | PHYSICAL_PAGE_MAP_BASE))
 
 #define PAGE_PRESENT 1
 #define PAGE_WRITABLE 2
@@ -18,10 +20,6 @@ typedef uint64_t pte_t;
 #define PAGE_WRITE_THROUGH 8
 #define PAGE_CACHE_DISABLE 0x10
 #define PAGE_ACCESSED 0x20
-/* PAGE_LARGE_TABLE bit is known as the PS or page size bit in the intel */
-/* manual. I think that is too generic of a name and it would imply */
-/* something else as a macro so I'm renaming it to this. */
-#define PAGE_LARGE_TABLE 0x80
 #define PAGE_NO_EXECUTE (UINT64_C(1) << 63)
 
 void initalize_memory(void);
@@ -43,19 +41,16 @@ void free_consecutive_physical_pages(uint64_t page, size_t count);
 uint64_t allocate_virtual_pages(size_t count);
 void free_virtual_pages(uint64_t base, size_t count);
 
-void initalize_bootstrap_mapping(void);
-void relocate_kernel(void);
 void relocate_bootstrap_data(void);
 void unmap_lower_memory(void);
-void map_page(uint64_t vaddr, uint64_t paddr, uint64_t flags);
+void map_page_autoalloc(uint64_t vaddr, uint64_t paddr, uint64_t flags);
+void bootstrap_higher_half_heap_table(void);
+void map_high_physical_memory(void);
 
-#define KERNEL_HEAP_BOTTOM UINT64_C(0xffffffffe0000000)
-#define KERNEL_HEAP_TOP UINT64_C(0xffffffffffe00000)
+#define KERNEL_HEAP_BOTTOM UINT64_C(0xffffc00000000000)
+#define KERNEL_HEAP_TOP UINT64_C(0xffffd00000000000)
 
 #define KERNEL_HIGHER_HALF_BASE UINT64_C(0xffffffffc0000000)
-
-#define KERNEL_STACK_SIZE 0x4000
-#define KERNEL_STACK_TOP KERNEL_HEAP_BOTTOM
 
 void *malloc(size_t size);
 void free(void *ptr);

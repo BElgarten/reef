@@ -37,6 +37,7 @@ struct bootstrap_memory_map_entry {
 
 
 #define BOOTSTRAP_STACK_SIZE 0x2000
+#define BOOTSTRAP_TRANSITION_PAGE_COUNT 5
 struct bootstrap_memory_info {
 	size_t count;
 	struct bootstrap_memory_map_entry *map;
